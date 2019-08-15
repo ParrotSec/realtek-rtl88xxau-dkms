@@ -1,0 +1,9 @@
+realtek-rtl88xxau-dkms for Parrot
+-------------------------------
+
+The source can be found here:
+ https://github.com/aircrack-ng/rtl8812au
+
+Currently we are using branch 5.6.1
+
+ -- Lorenzo "Palinuro" Faletra <palinuro@parrotsec.org>  Fri, 16 Aug 2019 00:48:55 +0200
