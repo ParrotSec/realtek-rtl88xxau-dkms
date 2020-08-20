@@ -1,5 +1,12 @@
 realtek-rtl88xxau-dkms (5.6.1-1parrot1) rolling; urgency=medium
 
+  * debian/control: Bump Standards-Version: to 4.5.0. No changes needed.
+  * debian/control: Bump DH compat level to version 13.
+
+ -- Vangelis Mouhtsis <vangelis@gnugr.org>  Thu, 20 Aug 2020 13:12:20 +0300
+
+realtek-rtl88xxau-dkms (5.6.1-1parrot1) rolling; urgency=medium
+
   * Import new upstream version.
   * Import new Kali package into Parrot tree.
 
