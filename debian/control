@@ -3,7 +3,7 @@ Section: contrib/kernel
 Priority: optional
 Maintainer: Parrot Dev Team <team@parrotsec.org>
 Uploaders: h0tw4t3r <h0tw4t3r@parrotsec.org>, Lorenzo "Palinuro" Faletra <palinuro@parrotsec.org>
-Build-Depends: debhelper-compat (= 12), dkms, dh-exec
+Build-Depends: debhelper-compat (= 13), dkms, dh-exec
 Standards-Version: 4.3.0
 Homepage: https://github.com/aircrack-ng/rtl8812au
 Vcs-Git: https://git.parrotsec.org/parrot-packages/realtek-rtl88xxau-dkms
