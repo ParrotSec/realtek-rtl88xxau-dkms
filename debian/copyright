@@ -1,19 +1,20 @@
-Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: rtl8812au
 Source: https://github.com/aircrack-ng/rtl8812au
+Comment: dkms package built during installation
 
 Files: *
 Copyright: 2007-2017 Realtek Corporation
 License: GPL-2
 
-Files: os_dep/linux/rtw_radiotap.c
-Copyright: 2009 Johannes Berg <johannes@sipsolutions.net>
-           2007 Andy Green <andy@warmcat.com>
+Files: os_dep/linux/rhashtable.*
+Copyright: 2015 Herbert Xu <herbert@gondor.apana.org.au>
+           2014-2015 Thomas Graf <tgraf@suug.ch>
+           2008-2014 Patrick McHardy <kaber@trash.net>
 License: GPL-2
 
 Files: debian/*
-Copyright: 2019 Parrot Dev Team
-Copyright: 2017-2018 Offensive Security
+Copyright: 2017-2021 Offensive Security
 License: GPL-2
 
 License: GPL-2

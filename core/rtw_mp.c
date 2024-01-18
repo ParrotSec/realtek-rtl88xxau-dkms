@@ -164,41 +164,7 @@ static void _init_mp_priv_(struct mp_priv *pmp_priv)
 
 }
 
-#ifdef PLATFORM_WINDOWS
 #if 0
-void mp_wi_callback(
-	IN NDIS_WORK_ITEM	*pwk_item,
-	IN PVOID			cntx
-)
-{
-	_adapter *padapter = (_adapter *)cntx;
-	struct mp_priv *pmppriv = &padapter->mppriv;
-	struct mp_wi_cntx	*pmp_wi_cntx = &pmppriv->wi_cntx;
-
-	/*  Execute specified action. */
-	if (pmp_wi_cntx->curractfunc != NULL) {
-		LARGE_INTEGER	cur_time;
-		ULONGLONG start_time, end_time;
-		NdisGetCurrentSystemTime(&cur_time);	/*  driver version */
-		start_time = cur_time.QuadPart / 10; /*  The return value is in microsecond */
-
-		pmp_wi_cntx->curractfunc(padapter);
-
-		NdisGetCurrentSystemTime(&cur_time);	/*  driver version */
-		end_time = cur_time.QuadPart / 10; /*  The return value is in microsecond */
-
-	}
-
-	NdisAcquireSpinLock(&(pmp_wi_cntx->mp_wi_lock));
-	pmp_wi_cntx->bmp_wi_progress = _FALSE;
-	NdisReleaseSpinLock(&(pmp_wi_cntx->mp_wi_lock));
-
-	if (pmp_wi_cntx->bmpdrv_unload)
-		NdisSetEvent(&(pmp_wi_cntx->mp_wi_evt));
-
-}
-#endif
-
 static int init_mp_priv_by_os(struct mp_priv *pmp_priv)
 {
 	struct mp_wi_cntx *pmp_wi_cntx;
@@ -740,15 +706,6 @@ MPT_DeInitAdapter(
 #endif
 #if	defined(CONFIG_RTL8723B)
 	phy_set_bb_reg(pAdapter, 0xA01, BIT0, 1); /* /suggestion  by jerry for MP Rx. */
-#endif
-#if 0 /* for Windows */
-	PlatformFreeWorkItem(&(pMptCtx->MptWorkItem));
-
-	while (pMptCtx->bMptWorkItemInProgress) {
-		if (NdisWaitEvent(&(pMptCtx->MptWorkItemEvent), 50))
-			break;
-	}
-	NdisFreeSpinLock(&(pMptCtx->MptWorkItemSpinLock));
 #endif
 }
 
@@ -1457,7 +1414,11 @@ exit:
 	pmptx->pallocated_buf = NULL;
 	pmptx->stop = 1;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
 	thread_exit(NULL);
+#else
+	kthread_thread_exit(NULL);
+#endif
 	return 0;
 }
 
@@ -2449,7 +2410,7 @@ u32 mp_query_psd(PADAPTER pAdapter, u8 *data)
 			psd_data = rtw_GetPSDData(pAdapter, i - psd_pts);
 		else
 			psd_data = rtw_GetPSDData(pAdapter, i);
-		sprintf(data, "%s%x ", data, psd_data);
+		sprintf(data + strlen(data), "%x ", psd_data);
 		i++;
 	}
 

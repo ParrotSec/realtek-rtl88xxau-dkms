@@ -1,0 +1,22 @@
+#!/bin/bash
+
+set -e
+
+if [ "$1" = '--upstream-version' ]; then
+    new_version="$2"
+else
+    printf "Missing --upstream-version argument" 1>&2
+    exit 1
+fi
+
+DEB_SOURCE="$(dpkg-parsechangelog -SSource)"
+
+default_branch="$(git remote show https://github.com/aircrack-ng/rtl8812au.git | grep 'HEAD' | sed 's/.*: v//')"
+
+version="$(echo ${new_version} | sed 's/~git.*//')"
+
+# fails if the upstream default branch has changed and is no longer the
+# version mentioned in debian/watch
+if [ "${default_branch}" != "${version}" ]; then
+    exit 1
+fi

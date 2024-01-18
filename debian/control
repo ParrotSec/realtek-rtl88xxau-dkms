@@ -1,19 +1,16 @@
 Source: realtek-rtl88xxau-dkms
 Section: contrib/kernel
 Priority: optional
-Maintainer: Parrot Dev Team <team@parrotsec.org>
-Uploaders: h0tw4t3r <h0tw4t3r@parrotsec.org>, Lorenzo "Palinuro" Faletra <palinuro@parrotsec.org>
-Build-Depends: debhelper-compat (= 13), dkms, dh-exec
-Standards-Version: 4.5.0
+Maintainer: Lorenzo "Palinuro" Faletra <palinuro@parrotsec.org>
+Uploaders: Lorenzo "Palinuro" Faletra <palinuro@parrotsec.org>
+Build-Depends: debhelper-compat (= 13), dh-sequence-dkms
+Standards-Version: 4.6.2
 Homepage: https://github.com/aircrack-ng/rtl8812au
-Vcs-Git: https://git.parrotsec.org/parrot-packages/realtek-rtl88xxau-dkms
-Vcs-Browser: https://nest.parrotsec.org/parrot-packages/realtek-rtl88xxau-dkms
-
 
 Package: realtek-rtl88xxau-dkms
 Architecture: all
-Depends: dkms (>= 1.95), ${misc:Depends}
+Depends: dkms (>= 1.95), ${misc:Depends}, realtek-rtl8814au-dkms
 Description: Realtek RTL88xxAU driver in DKMS format
- This package provides the source code for RTL8812AU/21AU and RTL8814AU Linux
+ This package provides the source code for RTL8812AU/21AU Linux
  driver (with monitor mode and frame injection) to be build with dkms. Kernel
  sources or headers are required to compile this module.

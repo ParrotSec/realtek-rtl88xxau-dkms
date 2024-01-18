@@ -656,15 +656,15 @@ int rtw_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 		ret = -EFAULT;
 		goto exit;
 	}
-	
+
 	command = rtw_zmalloc(priv_cmd.total_len+1);
 	if (!command) {
 		RTW_INFO("%s: failed to allocate memory\n", __FUNCTION__);
 		ret = -ENOMEM;
 		goto exit;
 	}
-	#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0))
-	if (!access_ok(priv_cmd.buf, priv_cmd.total_len)) {
+	#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,0))
+	if (!access_ok(&priv_cmd.buf, priv_cmd.total_len)) {
 	#else
 	if (!access_ok(VERIFY_READ, priv_cmd.buf, priv_cmd.total_len)) {
 	#endif
@@ -1080,7 +1080,7 @@ void *wifi_get_country_code(char *ccode)
 	if (!ccode)
 		return NULL;
 	if (wifi_control_data && wifi_control_data->get_country_code)
-		return wifi_control_data->get_country_code(ccode);
+		return wifi_control_data->get_country_code(ccode, 0);
 	return NULL;
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 39)) */
@@ -1113,13 +1113,9 @@ static int wifi_probe(struct platform_device *pdev)
 	       (int)wifi_irqres->start, wifi_wake_gpio);
 
 	if (wifi_wake_gpio > 0) {
-#ifdef CONFIG_PLATFORM_INTEL_BYT
-		wifi_configure_gpio();
-#else /* CONFIG_PLATFORM_INTEL_BYT */
 		gpio_request(wifi_wake_gpio, "oob_irq");
 		gpio_direction_input(wifi_wake_gpio);
 		oob_irq = gpio_to_irq(wifi_wake_gpio);
-#endif /* CONFIG_PLATFORM_INTEL_BYT */
 		RTW_INFO("%s oob_irq:%d\n", __func__, oob_irq);
 	} else if (wifi_irqres) {
 		oob_irq = wifi_irqres->start;
@@ -1302,34 +1298,7 @@ static void wifi_del_dev(void)
 #endif /* defined(RTW_ENABLE_WIFI_CONTROL_FUNC) */
 
 #ifdef CONFIG_GPIO_WAKEUP
-#ifdef CONFIG_PLATFORM_INTEL_BYT
-int wifi_configure_gpio(void)
-{
-	if (gpio_request(oob_gpio, "oob_irq")) {
-		RTW_INFO("## %s Cannot request GPIO\n", __FUNCTION__);
-		return -1;
-	}
-	gpio_export(oob_gpio, 0);
-	if (gpio_direction_input(oob_gpio)) {
-		RTW_INFO("## %s Cannot set GPIO direction input\n", __FUNCTION__);
-		return -1;
-	}
-	oob_irq = gpio_to_irq(oob_gpio);
-	if (oob_irq < 0) {
-		RTW_INFO("## %s Cannot convert GPIO to IRQ\n", __FUNCTION__);
-		return -1;
-	}
-
-	RTW_INFO("## %s OOB_IRQ=%d\n", __FUNCTION__, oob_irq);
-
-	return 0;
-}
-#endif /* CONFIG_PLATFORM_INTEL_BYT */
 void wifi_free_gpio(unsigned int gpio)
 {
-#ifdef CONFIG_PLATFORM_INTEL_BYT
-	if (gpio)
-		gpio_free(gpio);
-#endif /* CONFIG_PLATFORM_INTEL_BYT */
 }
 #endif /* CONFIG_GPIO_WAKEUP */

@@ -15,6 +15,14 @@
 #ifndef __OSDEP_SERVICE_H_
 #define __OSDEP_SERVICE_H_
 
+#include <linux/version.h>
+#ifndef RHEL_RELEASE_CODE
+#define RHEL_RELEASE_VERSION(a,b) (((a) << 8) + (b))
+#define RHEL_RELEASE_CODE 0
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+#include <linux/sched/signal.h>
+#endif
 
 #define _FAIL					0
 #define _SUCCESS				1
@@ -48,14 +56,6 @@
 	#include <linux/sched/types.h>
 #endif
 	#include <osdep_service_linux.h>
-#endif
-
-#ifdef PLATFORM_OS_XP
-	#include <osdep_service_xp.h>
-#endif
-
-#ifdef PLATFORM_OS_CE
-	#include <osdep_service_ce.h>
 #endif
 
 /* #include <rtw_byteorder.h> */
@@ -410,7 +410,11 @@ static __inline void thread_enter(char *name)
 	printf("%s", "RTKTHREAD_enter");
 #endif
 }
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
 void thread_exit(_completion *comp);
+#else
+void kthread_thread_exit(_completion *comp);
+#endif
 void _rtw_init_completion(_completion *comp);
 void _rtw_wait_for_comp_timeout(_completion *comp);
 void _rtw_wait_for_comp(_completion *comp);
@@ -453,15 +457,6 @@ __inline static _OS_STATUS res_to_status(sint res)
 	return res;
 #endif
 
-#ifdef PLATFORM_WINDOWS
-
-	if (res == _SUCCESS)
-		return NDIS_STATUS_SUCCESS;
-	else
-		return NDIS_STATUS_FAILURE;
-
-#endif
-
 }
 
 __inline static void rtw_dump_stack(void)
@@ -480,16 +475,6 @@ __inline static void rtw_dump_stack(void)
 __inline static int rtw_bug_check(void *parg1, void *parg2, void *parg3, void *parg4)
 {
 	int ret = _TRUE;
-
-#ifdef PLATFORM_WINDOWS
-	if (((uint)parg1) <= 0x7fffffff ||
-	    ((uint)parg2) <= 0x7fffffff ||
-	    ((uint)parg3) <= 0x7fffffff ||
-	    ((uint)parg4) <= 0x7fffffff) {
-		ret = _FALSE;
-		KeBugCheckEx(0x87110000, (ULONG_PTR)parg1, (ULONG_PTR)parg2, (ULONG_PTR)parg3, (ULONG_PTR)parg4);
-	}
-#endif
 
 	return ret;
 

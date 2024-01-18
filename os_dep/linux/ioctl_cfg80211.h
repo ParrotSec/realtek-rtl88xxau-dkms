@@ -185,6 +185,11 @@ struct rtw_wdev_priv {
 	u16 pno_scan_seq_num;
 #endif
 
+	/* Standard RSSI notification parameters */
+	s32 cqm_rssi_thold;
+	u32 cqm_rssi_hyst;
+	s32 cqm_rssi_last;
+
 #ifdef CONFIG_RTW_CFGVEDNOR_RSSIMONITOR
         s8 rssi_monitor_max;
         s8 rssi_monitor_min;
@@ -351,6 +356,8 @@ void rtw_cfg80211_init_rfkill(struct wiphy *wiphy);
 void rtw_cfg80211_deinit_rfkill(struct wiphy *wiphy);
 #endif
 
+void rtw_cfg80211_cqm_rssi_update(_adapter *padapter, s32 rssi);
+
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0))  && !defined(COMPAT_KERNEL_RELEASE)
 #define rtw_cfg80211_rx_mgmt(wdev, freq, sig_dbm, buf, len, gfp) cfg80211_rx_mgmt(wdev_to_ndev(wdev), freq, buf, len, gfp)
 #elif (LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0))
@@ -407,7 +414,7 @@ void rtw_cfg80211_deinit_rfkill(struct wiphy *wiphy);
 #endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0))
-u8 rtw_cfg80211_ch_switch_notify(_adapter *adapter, u8 ch, u8 bw, u8 offset, u8 ht);
+u8 rtw_cfg80211_ch_switch_notify(_adapter *adapter, u8 ch, u8 bw, u8 offset, u8 ht, bool started);
 #endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 26)) && (LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0))
@@ -423,6 +430,5 @@ u8 rtw_cfg80211_ch_switch_notify(_adapter *adapter, u8 ch, u8 bw, u8 offset, u8 
 	(band == BAND_ON_2_4G) ? NL80211_BAND_2GHZ : \
 	(band == BAND_ON_5G) ? NL80211_BAND_5GHZ : NUM_NL80211_BANDS
 
-#include "rtw_cfgvendor.h"
 
 #endif /* __IOCTL_CFG80211_H__ */

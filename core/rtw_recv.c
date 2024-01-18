@@ -17,13 +17,6 @@
 #include <drv_types.h>
 #include <hal_data.h>
 
-#if defined(PLATFORM_LINUX) && defined (PLATFORM_WINDOWS)
-
-	#error "Shall be Linux or Windows, but not both!\n"
-
-#endif
-
-
 #ifdef CONFIG_NEW_SIGNAL_STAT_PROCESS
 static void rtw_signal_stat_timer_hdl(void *ctx);
 
@@ -2579,21 +2572,7 @@ sint wlanhdr_to_ethhdr(union recv_frame *precvframe)
 		/* ptr -= 16; */
 		/* _rtw_memcpy(ptr, get_rxmem(precvframe), 16); */
 	} else {
-#ifdef PLATFORM_OS_XP
-		NDIS_PACKET_8021Q_INFO VlanPriInfo;
-		UINT32 UserPriority = precvframe->u.hdr.attrib.priority;
-		UINT32 VlanID = (pvlan != NULL ? get_vlan_id(pvlan) : 0);
 
-		VlanPriInfo.Value =          /* Get current value. */
-			NDIS_PER_PACKET_INFO_FROM_PACKET(precvframe->u.hdr.pkt, Ieee8021QInfo);
-
-		VlanPriInfo.TagHeader.UserPriority = UserPriority;
-		VlanPriInfo.TagHeader.VlanId =  VlanID ;
-
-		VlanPriInfo.TagHeader.CanonicalFormatId = 0; /* Should be zero. */
-		VlanPriInfo.TagHeader.Reserved = 0; /* Should be zero. */
-		NDIS_PER_PACKET_INFO_FROM_PACKET(precvframe->u.hdr.pkt, Ieee8021QInfo) = VlanPriInfo.Value;
-#endif
 	}
 
 	if (eth_type == 0x8712) { /* append rx status for mp test packets */
@@ -2610,8 +2589,6 @@ sint wlanhdr_to_ethhdr(union recv_frame *precvframe)
 	_rtw_memcpy(ptr + 12, &eth_type, 2);
 
 exit:
-
-
 	return ret;
 }
 #endif
@@ -3997,7 +3974,7 @@ static sint fill_radiotap_hdr(_adapter *padapter, union recv_frame *precvframe, 
 
 	u8 data_rate[] = {
 		2, 4, 11, 22, /* CCK */
-		12, 18, 24, 36, 48, 72, 93, 108, /* OFDM */
+		12, 18, 24, 36, 48, 72, 96, 108, /* OFDM */
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, /* HT MCS index */
 		16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, /* VHT Nss 1 */
@@ -4013,10 +3990,39 @@ static sint fill_radiotap_hdr(_adapter *padapter, union recv_frame *precvframe, 
 
 	u8 hdr_buf[64] = {0};
 	u16 rt_len = 8;
+	u32 tmp_32bit;
+	int i;
 
 	/* create header */
 	rtap_hdr = (struct ieee80211_radiotap_header *)&hdr_buf[0];
 	rtap_hdr->it_version = PKTHDR_RADIOTAP_VERSION;
+
+	if(pHalData->NumTotalRFPath>0 && pattrib->physt) {
+		rtap_hdr->it_present |=	(1<<IEEE80211_RADIOTAP_EXT) |
+			(1<<IEEE80211_RADIOTAP_RADIOTAP_NAMESPACE);
+
+		if(pHalData->NumTotalRFPath>1) {
+			tmp_32bit = (1<<IEEE80211_RADIOTAP_ANTENNA) |
+				(1<<IEEE80211_RADIOTAP_DBM_ANTSIGNAL) |
+				(1<<IEEE80211_RADIOTAP_EXT) |
+				(1<<IEEE80211_RADIOTAP_RADIOTAP_NAMESPACE);
+
+			for(i=0; i<pHalData->NumTotalRFPath-1; i++) {
+				memcpy(&hdr_buf[rt_len], &tmp_32bit, 4);
+				rt_len += 4;
+			}
+		}
+		tmp_32bit = (1<<IEEE80211_RADIOTAP_ANTENNA) |
+			(1<<IEEE80211_RADIOTAP_DBM_ANTSIGNAL);
+		memcpy(&hdr_buf[rt_len], &tmp_32bit, 4);
+		rt_len += 4;
+	}
+
+#ifdef CONFIG_RTL8814A
+	/* RTL8814AU rx descriptor has no bandwidth, ldpc, stbc and sgi info */
+	/* fixup bandwidth */
+	pattrib->bw = pattrib->phy_info.band_width & 0x03;
+#endif
 
 	/* tsft */
 	if (pattrib->tsfl) {
@@ -4042,9 +4048,15 @@ static sint fill_radiotap_hdr(_adapter *padapter, union recv_frame *precvframe, 
 	if (pattrib->mfrag)
 		hdr_buf[rt_len] |= IEEE80211_RADIOTAP_F_FRAG;
 
-	/* always append FCS */
-	hdr_buf[rt_len] |= IEEE80211_RADIOTAP_F_FCS;
+#ifdef CONFIG_RX_PACKET_APPEND_FCS
+        // Start by always indicating FCS is there:
+        hdr_buf[rt_len] |= IEEE80211_RADIOTAP_F_FCS;
 
+        // Next, test for prior conditions that will remove FCS, and update flag accordingly:
+        if(check_fwstate(&padapter->mlmepriv,WIFI_MONITOR_STATE) == _FALSE)
+                if((pattrib->pkt_rpt_type == NORMAL_RX) && (pHalData->ReceiveConfig & RCR_APPFCS))
+                        hdr_buf[rt_len] &= ~IEEE80211_RADIOTAP_F_FCS;
+#endif
 
 	if (0)
 		hdr_buf[rt_len] |= IEEE80211_RADIOTAP_F_DATAPAD;
@@ -4075,16 +4087,25 @@ static sint fill_radiotap_hdr(_adapter *padapter, union recv_frame *precvframe, 
 	tmp_16bit = 0;
 	rtap_hdr->it_present |= (1 << IEEE80211_RADIOTAP_CHANNEL);
 	tmp_16bit = CHAN2FREQ(rtw_get_oper_ch(padapter));
-	/*tmp_16bit = CHAN2FREQ(pHalData->current_channel);*/
 	memcpy(&hdr_buf[rt_len], &tmp_16bit, 2);
 	rt_len += 2;
 
 	/* channel flags */
-	tmp_16bit = 0;
-	if (pHalData->current_band_type == 0)
+	if (pHalData->current_band_type == BAND_ON_2_4G) {
+		tmp_16bit = 0;
 		tmp_16bit |= cpu_to_le16(IEEE80211_CHAN_2GHZ);
-	else
+	} else if (pHalData->current_band_type == BAND_ON_5G) {
+		tmp_16bit = 0;
 		tmp_16bit |= cpu_to_le16(IEEE80211_CHAN_5GHZ);
+	} else {
+		if (tmp_16bit >= 5000) {
+			tmp_16bit = 0;
+			tmp_16bit |= cpu_to_le16(IEEE80211_CHAN_5GHZ);
+		} else {
+			tmp_16bit = 0;
+			tmp_16bit |= cpu_to_le16(IEEE80211_CHAN_2GHZ);
+		}
+	}
 
 	if (pattrib->data_rate <= DESC_RATE54M) {
 		if (pattrib->data_rate <= DESC_RATE11M) {
@@ -4094,32 +4115,42 @@ static sint fill_radiotap_hdr(_adapter *padapter, union recv_frame *precvframe, 
 			/* OFDM */
 			tmp_16bit |= cpu_to_le16(IEEE80211_CHAN_OFDM);
 		}
-	} else
+	} else {
 		tmp_16bit |= cpu_to_le16(IEEE80211_CHAN_DYN);
+	}
 	memcpy(&hdr_buf[rt_len], &tmp_16bit, 2);
 	rt_len += 2;
 
-	/* dBm Antenna Signal */
-	rtap_hdr->it_present |= (1 << IEEE80211_RADIOTAP_DBM_ANTSIGNAL);
-	hdr_buf[rt_len] = pattrib->phy_info.recv_signal_power;
-	rt_len += 1;
+	if(pattrib->physt) {
+		/* dBm Antenna Signal */
+		rtap_hdr->it_present |= (1 << IEEE80211_RADIOTAP_DBM_ANTSIGNAL);
+		hdr_buf[rt_len] = pattrib->phy_info.recv_signal_power;
+		rt_len += 1;
 
 #if 0
 	/* dBm Antenna Noise */
 	rtap_hdr->it_present |= (1 << IEEE80211_RADIOTAP_DBM_ANTNOISE);
 	hdr_buf[rt_len] = 0;
 	rt_len += 1;
+#endif
+
+		rt_len++;	// alignment
+	}
 
 	/* Signal Quality */
 	rtap_hdr->it_present |= (1 << IEEE80211_RADIOTAP_LOCK_QUALITY);
-	hdr_buf[rt_len] = pattrib->phy_info.signal_quality;
-	rt_len += 1;
-#endif
+	tmp_16bit = cpu_to_le16(pattrib->phy_info.signal_quality);
+	memcpy(&hdr_buf[rt_len], &tmp_16bit, 2);
+	rt_len += 2;
+#if 0
 
 	/* Antenna */
 	rtap_hdr->it_present |= (1 << IEEE80211_RADIOTAP_ANTENNA);
-	hdr_buf[rt_len] = 0; /* pHalData->rf_type; */
+	hdr_buf[rt_len] = pHalData->rf_type;
 	rt_len += 1;
+
+	rt_len++;	// alignment
+#endif
 
 	/* RX flags */
 	rtap_hdr->it_present |= (1 << IEEE80211_RADIOTAP_RX_FLAGS);
@@ -4140,13 +4171,15 @@ static sint fill_radiotap_hdr(_adapter *padapter, union recv_frame *precvframe, 
 		hdr_buf[rt_len + 1] |= (pattrib->bw & 0x03);
 
 		/* guard interval */
+#ifndef CONFIG_RTL8814A
 		hdr_buf[rt_len] |= BIT2;
 		hdr_buf[rt_len + 1] |= (pattrib->sgi & 0x01) << 2;
-
+#endif
 		/* STBC */
+#ifndef CONFIG_RTL8814A
 		hdr_buf[rt_len] |= BIT5;
 		hdr_buf[rt_len + 1] |= (pattrib->stbc & 0x03) << 5;
-
+#endif
 		rt_len += 2;
 
 		/* MCS rate index */
@@ -4179,7 +4212,9 @@ static sint fill_radiotap_hdr(_adapter *padapter, union recv_frame *precvframe, 
 		hdr_buf[rt_len + 2] |= (pattrib->sgi & 0x01) << 2;
 
 		/* LDPC extra OFDM symbol */
+#ifndef CONFIG_RTL8814A
 		tmp_16bit |= BIT4;
+#endif
 		hdr_buf[rt_len + 2] |= (pattrib->ldpc & 0x01) << 4;
 
 		memcpy(&hdr_buf[rt_len], &tmp_16bit, 2);
@@ -4224,6 +4259,15 @@ static sint fill_radiotap_hdr(_adapter *padapter, union recv_frame *precvframe, 
 		tmp_16bit = 0;
 		memcpy(&hdr_buf[rt_len], &tmp_16bit, 2);
 		rt_len += 2;
+	}
+
+	if (pattrib->physt) {
+		for(i=0; i<pHalData->NumTotalRFPath; i++) {
+			hdr_buf[rt_len] = pattrib->phy_info.rx_pwr[i];
+			rt_len ++;
+			hdr_buf[rt_len] = i;
+			rt_len ++;
+		}
 	}
 
 	/* push to skb */
@@ -4516,28 +4560,22 @@ exit:
 	return ret;
 }
 
-
 s32 rtw_recv_entry(union recv_frame *precvframe)
 {
 	_adapter *padapter;
 	struct recv_priv *precvpriv;
 	s32 ret = _SUCCESS;
 
-
-
 	padapter = precvframe->u.hdr.adapter;
 
 	precvpriv = &padapter->recvpriv;
-
 
 	ret = recv_func(padapter, precvframe);
 	if (ret == _FAIL) {
 		goto _recv_entry_drop;
 	}
 
-
 	precvpriv->rx_pkts++;
-
 
 	return ret;
 
@@ -4547,8 +4585,6 @@ _recv_entry_drop:
 	if (padapter->registrypriv.mp_mode == 1)
 		padapter->mppriv.rx_pktloss = precvpriv->rx_drop;
 #endif
-
-
 
 	return ret;
 }
@@ -4799,7 +4835,7 @@ void rx_query_phy_status(
 	wlanhdr = get_recvframe_data(precvframe);
 
 	ta = get_ta(wlanhdr);
-	ra = get_ra(wlanhdr);
+	ra = wifi_get_ra(wlanhdr);
 	is_ra_bmc = IS_MCAST(ra);
 
 	if (_rtw_memcmp(adapter_mac_addr(padapter), ta, ETH_ALEN) == _TRUE) {
@@ -4884,7 +4920,7 @@ void rx_query_phy_status(
 						precvframe->u.hdr.psta = psta;
 					rx_process_phy_info(padapter, precvframe);
 				}
-			} else 
+			} else
 #endif
 			{
 					if (psta)
@@ -4939,7 +4975,7 @@ s32 pre_recv_entry(union recv_frame *precvframe, u8 *pphy_status)
 {
 	s32 ret = _SUCCESS;
 	u8 *pbuf = precvframe->u.hdr.rx_data;
-	u8 *pda = get_ra(pbuf);
+	u8 *pda = wifi_get_ra(pbuf);
 	u8 ra_is_bmc = IS_MCAST(pda);
 	_adapter *primary_padapter = precvframe->u.hdr.adapter;
 #ifdef CONFIG_CONCURRENT_MODE
@@ -5087,4 +5123,3 @@ void dump_rx_bh_tk(void *sel, struct recv_priv *recv)
 	);
 }
 #endif /* DBG_RX_BH_TRACKING */
-

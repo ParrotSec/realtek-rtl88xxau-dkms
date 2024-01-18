@@ -4,13 +4,14 @@ include /usr/share/dpkg/pkg-info.mk
 export DEB_VERSION_UPSTREAM
 
 %:
-	dh $@ --with dkms
+	dh $@
 
 override_dh_dkms:
-	dh_dkms -V $(DEB_VERSION_UPSTREAM) -- dkms.conf
+	# Force PACKAGE_VERSION to be DEB_VERSION_UPSTREAM
+	sed -i dkms.conf -e 's%^PACKAGE_VERSION=.*%PACKAGE_VERSION="$(DEB_VERSION_UPSTREAM)"%'
+	dh_dkms -- dkms.conf
 
-override_dh_fixperms:
-	dh_fixperms
+execute_after_dh_fixperms:
 	find debian/realtek-rtl88xxau-dkms/usr/src -type f -exec chmod -x {} \;
 
 # Nothing to configure, build or auto-install (all is done after

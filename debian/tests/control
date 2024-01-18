@@ -1,0 +1,2 @@
+Test-Command: debian/tests/dkms-autopkgtest
+Restrictions: needs-root allow-stderr

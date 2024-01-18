@@ -1,3 +1,8 @@
 version=4
-opts="filenamemangle=s/.*\/v?(.*)\.tar\.gz/realtek-rtl88xxau-$1.tar.gz/" \
-https://github.com/aircrack-ng/rtl8812au/tags .*/v?(.*)\.tar\.gz
+opts="mode=git, pretty=5.6.4.2~git%cd.%h, pgpmode=none" \
+  https://github.com/aircrack-ng/rtl8812au.git \
+  HEAD debian debian/script-targz
+
+# Use the following when upstream starts to tag releases:
+#opts="filenamemangle=s/.*\/v?(.*)\.tar\.gz/realtek-rtl88xxau-$1.tar.gz/" \
+#https://github.com/aircrack-ng/rtl8812au/tags .*/v?(.*)\.tar\.gz

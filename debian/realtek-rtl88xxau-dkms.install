@@ -1,2 +1,1 @@
-#!/usr/bin/dh-exec
-core hal include Kconfig Makefile LICENSE README.md REALTEK_README.txt os_dep platform usr/src/realtek-rtl88xxau-${DEB_VERSION_UPSTREAM}
+core hal include Kconfig Makefile os_dep platform usr/src/realtek-rtl88xxau-${env:DEB_VERSION_UPSTREAM}
