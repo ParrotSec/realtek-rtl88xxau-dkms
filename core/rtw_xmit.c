@@ -16,11 +16,7 @@
 
 #include <drv_types.h>
 #include <hal_data.h>
-
-#if defined(PLATFORM_LINUX) && defined (PLATFORM_WINDOWS)
-	#error "Shall be Linux or Windows, but not both!\n"
-#endif
-
+#include <net/cfg80211.h>
 
 static u8 P802_1H_OUI[P80211_OUI_LEN] = { 0x00, 0x00, 0xf8 };
 static u8 RFC1042_OUI[P80211_OUI_LEN] = { 0x00, 0x00, 0x00 };
@@ -32,10 +28,8 @@ static void _init_txservq(struct tx_servq *ptxservq)
 	ptxservq->qcnt = 0;
 }
 
-
 void	_rtw_init_sta_xmit_priv(struct sta_xmit_priv *psta_xmitpriv)
 {
-
 
 	_rtw_memset((unsigned char *)psta_xmitpriv, 0, sizeof(struct sta_xmit_priv));
 
@@ -2023,7 +2017,9 @@ s32 rtw_txframes_sta_ac_pending(_adapter *padapter, struct pkt_attrib *pattrib)
 
 	}
 
-	return ptxservq->qcnt;
+	if (ptxservq)
+		return ptxservq->qcnt;
+	return 0;
 }
 
 #ifdef CONFIG_TDLS
@@ -3493,11 +3489,7 @@ void rtw_init_xmitframe(struct xmit_frame *pxframe)
 
 #ifdef CONFIG_USB_HCI
 		pxframe->pkt = NULL;
-#ifdef USB_PACKET_OFFSET_SZ
 		pxframe->pkt_offset = (PACKET_OFFSET_SZ / 8);
-#else
-		pxframe->pkt_offset = 1;/* default use pkt_offset to fill tx desc */
-#endif
 
 #ifdef CONFIG_USB_TX_AGGREGATION
 		pxframe->agg_num = 1;
@@ -4409,7 +4401,6 @@ static void do_queue_select(_adapter	*padapter, struct pkt_attrib *pattrib)
 s32 rtw_monitor_xmit_entry(struct sk_buff *skb, struct net_device *ndev)
 {
 	u16 frame_ctl;
-	struct ieee80211_radiotap_header rtap_hdr;
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(ndev);
 	struct pkt_file pktfile;
 	struct rtw_ieee80211_hdr *pwlanhdr;
@@ -4417,38 +4408,61 @@ s32 rtw_monitor_xmit_entry(struct sk_buff *skb, struct net_device *ndev)
 	struct xmit_frame		*pmgntframe;
 	struct mlme_ext_priv	*pmlmeext = &(padapter->mlmeextpriv);
 	struct xmit_priv	*pxmitpriv = &(padapter->xmitpriv);
+	struct registry_priv	*pregpriv = &(padapter->registrypriv);
 	unsigned char	*pframe;
-	u8 dummybuf[32];
-	int len = skb->len, rtap_len;
+	int len = skb->len;
 
+	int rtap_len, rtap_remain, ret;
+	struct ieee80211_radiotap_header *rtap_hdr; // net/ieee80211_radiotap.h
+	struct ieee80211_radiotap_iterator iterator; // net/cfg80211.h
+	u8 rtap_buf[256];
+
+	int alloc_tries, alloc_delay;
 
 	rtw_mstat_update(MSTAT_TYPE_SKB, MSTAT_ALLOC_SUCCESS, skb->truesize);
 
-#ifndef CONFIG_CUSTOMER_ALIBABA_GENERAL
 	if (unlikely(skb->len < sizeof(struct ieee80211_radiotap_header)))
 		goto fail;
 
 	_rtw_open_pktfile((_pkt *)skb, &pktfile);
-	_rtw_pktfile_read(&pktfile, (u8 *)(&rtap_hdr), sizeof(struct ieee80211_radiotap_header));
-	rtap_len = ieee80211_get_radiotap_len((u8 *)(&rtap_hdr));
-	if (unlikely(rtap_hdr.it_version))
+	// Read in radiotap header and sanity check length
+	_rtw_pktfile_read(&pktfile, rtap_buf, sizeof(struct ieee80211_radiotap_header));
+	rtap_hdr = (struct ieee80211_radiotap_header*)(rtap_buf);
+	rtap_len = ieee80211_get_radiotap_len(rtap_buf);
+
+	if (unlikely(rtap_hdr->it_version))
 		goto fail;
 
 	if (unlikely(skb->len < rtap_len))
 		goto fail;
 
-	if (rtap_len != 12) {
-		RTW_INFO("radiotap len (should be 14): %d\n", rtap_len);
+	if (unlikely(rtap_len < sizeof(struct ieee80211_radiotap_header)))
 		goto fail;
+
+	len -= sizeof(struct ieee80211_radiotap_header);
+	rtap_remain = rtap_len - sizeof(struct ieee80211_radiotap_header);
+
+	// Read in rest of radiotap body
+	if (rtap_remain) {
+		_rtw_pktfile_read(&pktfile, &rtap_buf[sizeof(struct ieee80211_radiotap_header)], rtap_remain);
+		len -= rtap_remain;
 	}
-	_rtw_pktfile_read(&pktfile, dummybuf, rtap_len-sizeof(struct ieee80211_radiotap_header));
-	len = len - rtap_len;
-#endif
-	pmgntframe = alloc_mgtxmitframe(pxmitpriv);
-	if (pmgntframe == NULL) {
-		rtw_udelay_os(500);
+
+	// NOTE: we process the radiotap header after we update the frame attribs below,
+	// so we can directly apply overrides rather than cache all the values into
+	// variables and apply them later.
+
+	// Process rest of frame
+	alloc_delay = 100;
+	for (alloc_tries=3; alloc_tries > 0; alloc_tries--) {
+		pmgntframe = alloc_mgtxmitframe(pxmitpriv);
+		if (pmgntframe != NULL)
+			break;
+		rtw_udelay_os(alloc_delay);
+		alloc_delay += alloc_delay/2;
+	}
+	if (pmgntframe == NULL)
 		goto fail;
-	}
 
 	_rtw_memset(pmgntframe->buf_addr, 0, WLANHDR_OFFSET + TXDESC_OFFSET);
 	pframe = (u8 *)(pmgntframe->buf_addr) + TXDESC_OFFSET;
@@ -4456,31 +4470,234 @@ s32 rtw_monitor_xmit_entry(struct sk_buff *skb, struct net_device *ndev)
 	_rtw_pktfile_read(&pktfile, pframe, len);
 
 
-	/* Check DATA/MGNT frames */
+	// Setup attribs for default Mgmt vs Data frame
 	pwlanhdr = (struct rtw_ieee80211_hdr *)pframe;
-	frame_ctl = le16_to_cpu(pwlanhdr->frame_ctl);
-	if ((frame_ctl & RTW_IEEE80211_FCTL_FTYPE) == RTW_IEEE80211_FTYPE_DATA) {
+	pattrib = &pmgntframe->attrib;
+	pattrib->injected = _TRUE;
 
-		pattrib = &pmgntframe->attrib;
-		update_monitor_frame_attrib(padapter, pattrib);
+	if (pregpriv->monitor_disable_1m) {
 
-		if (is_broadcast_mac_addr(pwlanhdr->addr3) || is_broadcast_mac_addr(pwlanhdr->addr1))
-			pattrib->rate = MGN_24M;
+		frame_ctl = le16_to_cpu(pwlanhdr->frame_ctl);
+		if ((frame_ctl & RTW_IEEE80211_FCTL_FTYPE) == RTW_IEEE80211_FTYPE_DATA) {
+
+			update_monitor_frame_attrib(padapter, pattrib);
+
+			if (is_broadcast_mac_addr(pwlanhdr->addr3) || is_broadcast_mac_addr(pwlanhdr->addr1))
+				pattrib->rate = MGN_24M;
+		} else {
+			update_mgntframe_attrib(padapter, pattrib);
+		}
 
 	} else {
 
-		pattrib = &pmgntframe->attrib;
 		update_mgntframe_attrib(padapter, pattrib);
 
+		pattrib->rate = MGN_1M;
+
+		pattrib->ldpc = _FALSE;
+		pattrib->stbc = 0;
+
 	}
-	pattrib->retry_ctrl = _FALSE;
+
+	if (pregpriv->monitor_retransmit)
+		pattrib->retry_ctrl = _TRUE;
+	else
+		pattrib->retry_ctrl = _FALSE;
 	pattrib->pktlen = len;
-	pmlmeext->mgnt_seq = GetSequence(pwlanhdr);
-	pattrib->seqnum = pmlmeext->mgnt_seq;
-	pmlmeext->mgnt_seq++;
+
 	pattrib->last_txcmdsz = pattrib->pktlen;
 
+	/*
+		ANALYSIS: most other xmit/frame generation flows:
+		- take next seqnum from pmlmeext->mgnt_seq
+		- call SetSeqNum to write it into the packet
+		- increment pmlmext->mgnt_seq
+		- and set it into pattrib->seqnum
+		Then in HAL, update_txdesc will either use hardware seq number if !pattrib_qos_en,
+		otherwise SET_TX_DESC_SEQ_8812 w/ pattrib->seqnum.
+		Also worth noting is prior update_monitor_frame_attrib/update_mgntframe_attrib call
+		merely set pattrib->seqnum to pmlmeext->mgnt_seq, but do NOT increment mgnt_seq.
+		Also they both set qos_en=_FALSE, which induce HW seq numbers.
+		The code below, however, appears to read the seq num out of the injected packet,
+		update the global pmlmeext->mgnt_seq with the injected seqnum, and then set
+		global pmlmeext to next seq. IMHO it appears to be doing the wrong thing, since
+		it is both updating pmlmeext from data in the packet, and all those values
+		are ignored because qos_en=_FALSE and thus HW seq is just used.
+		Ideally it would be nice to be able to control the sequence number, but the
+		strong coupling to qos_en makes that difficult right now.  So we will just
+		use the default HW mode.  However, we are going to skip some of the extraneous
+		steps this original code did by simply accepting:
+		- update_*_attrib called prior already set seqnum from pmlmeext
+		- so all we need to do is mgnt_seq++ just in case
+		- (and it seems we can avoid the SetSeqNum call)
+		pmlmeext->mgnt_seq = GetSequence(pwlanhdr);
+		pattrib->seqnum = pmlmeext->mgnt_seq;
+		pmlmeext->mgnt_seq++;
+	*/
+	pmlmeext->mgnt_seq++;
+
+	pattrib->retry_ctrl = _FALSE;
+
+	// Parse radiotap for injection items and overwrite attribs as needed
+	ret = ieee80211_radiotap_iterator_init(&iterator, rtap_hdr, rtap_len, NULL);
+	while (!ret) {
+		ret = ieee80211_radiotap_iterator_next(&iterator);
+		if (ret)
+			continue;
+
+		switch (iterator.this_arg_index) {
+			case IEEE80211_RADIOTAP_RATE:
+				// This is basic 802.11b/g rate; use MCS/VHT for higher rates
+				pattrib->rate = *iterator.this_arg;
+#ifdef CONFIG_80211AC_VHT
+				pattrib->raid = RATEID_IDX_BGN_40M_1SS;
+#else
+				if (pattrib->rate == IEEE80211_CCK_RATE_1MB 
+						|| pattrib->rate == IEEE80211_CCK_RATE_2MB
+						|| pattrib->rate == IEEE80211_CCK_RATE_5MB
+						|| pattrib->rate == IEEE80211_CCK_RATE_11MB )
+					pattrib->raid = rtw_get_mgntframe_raid(padapter, WIRELESS_11B);
+				else
+					pattrib->raid = rtw_get_mgntframe_raid(padapter, WIRELESS_11G);
+#endif
+
+				// We have to reset other attributes that may have been set prior for MCS/VHT rates
+				pattrib->ht_en = _FALSE;
+				pattrib->ampdu_en = _FALSE;
+				pattrib->sgi = _FALSE;
+				pattrib->ldpc = _FALSE;
+				pattrib->stbc = 0;
+				pattrib->bwmode = CHANNEL_WIDTH_20;
+				pattrib->ch_offset = HAL_PRIME_CHNL_OFFSET_DONT_CARE;
+
+				break;
+
+			case IEEE80211_RADIOTAP_TX_FLAGS: {
+				u16 txflags = get_unaligned_le16(iterator.this_arg);
+
+				if ((txflags & IEEE80211_RADIOTAP_F_TX_NOACK) == 0)
+					pattrib->retry_ctrl = _TRUE; // Note; already _FALSE by default
+
+				if (txflags & 0x0010) { // Use preconfigured seq num
+					// NOTE: this is currently ignored due to qos_en=_FALSE and HW seq num override
+					pattrib->seqnum = GetSequence(pwlanhdr);
+				}
+
+				break;
+			}
+
+			case IEEE80211_RADIOTAP_MCS: {
+				u8 mcs_have = iterator.this_arg[0];
+
+				// Set up defaults
+				pattrib->rate = MGN_MCS0;
+				pattrib->bwmode = IEEE80211_RADIOTAP_MCS_BW_20;
+				pattrib->ch_offset = HAL_PRIME_CHNL_OFFSET_DONT_CARE;
+				pattrib->ht_en = _TRUE;
+				pattrib->sgi = _FALSE;
+				pattrib->ldpc = _FALSE;
+				pattrib->stbc = 0;
+
+				if (mcs_have & IEEE80211_RADIOTAP_MCS_HAVE_BW) {
+
+					u8 bw = (iterator.this_arg[1] & IEEE80211_RADIOTAP_MCS_BW_MASK);
+					if (bw == IEEE80211_RADIOTAP_MCS_BW_20L) {
+						bw = IEEE80211_RADIOTAP_MCS_BW_20;
+						pattrib->ch_offset = HAL_PRIME_CHNL_OFFSET_LOWER;
+					}
+					if (bw == IEEE80211_RADIOTAP_MCS_BW_20U) {
+						bw = IEEE80211_RADIOTAP_MCS_BW_20;
+						pattrib->ch_offset = HAL_PRIME_CHNL_OFFSET_UPPER;
+					}
+
+					pattrib->bwmode = bw;
+				}
+
+				if (mcs_have & IEEE80211_RADIOTAP_MCS_HAVE_MCS) {
+					u8 fixed_rate = iterator.this_arg[2] & 0x7f;
+					if(fixed_rate > 31)
+						fixed_rate = 0;
+					fixed_rate += MGN_MCS0;
+					pattrib->rate = fixed_rate;
+				}
+
+				if ((mcs_have & IEEE80211_RADIOTAP_MCS_HAVE_GI) && (iterator.this_arg[1] & IEEE80211_RADIOTAP_MCS_SGI))
+						pattrib->sgi = _TRUE;
+
+				if ((mcs_have & IEEE80211_RADIOTAP_MCS_HAVE_FEC) && (iterator.this_arg[1] & IEEE80211_RADIOTAP_MCS_FEC_LDPC))
+						pattrib->ldpc = _TRUE;
+
+				if (mcs_have & IEEE80211_RADIOTAP_MCS_HAVE_STBC) {
+					u8 stbc = (iterator.this_arg[1] & IEEE80211_RADIOTAP_MCS_STBC_MASK) >> IEEE80211_RADIOTAP_MCS_STBC_SHIFT;
+					pattrib->stbc = stbc;
+				}
+			}
+			break;
+
+#ifdef CONFIG_80211AC_VHT
+			case IEEE80211_RADIOTAP_VHT: {
+				unsigned int mcs, nss;
+
+				u8 known = iterator.this_arg[0];
+				u8 flags = iterator.this_arg[2];
+
+				// Set up defaults
+				pattrib->stbc = 0;
+				pattrib->sgi = _FALSE;
+				pattrib->bwmode = CHANNEL_WIDTH_20;
+				pattrib->ldpc = _FALSE;
+				pattrib->rate = MGN_VHT1SS_MCS0;
+				pattrib->raid = RATEID_IDX_VHT_1SS;
+
+				// NOTE: this code currently only supports 1SS for radiotap defined rates
+
+				if ((known & IEEE80211_RADIOTAP_VHT_KNOWN_STBC) && (flags & IEEE80211_RADIOTAP_VHT_FLAG_STBC))
+						pattrib->stbc = 1;
+
+				if ((known & IEEE80211_RADIOTAP_VHT_KNOWN_GI) && (flags & IEEE80211_RADIOTAP_VHT_FLAG_SGI))
+						pattrib->sgi = _TRUE;
+
+				if (known & IEEE80211_RADIOTAP_VHT_KNOWN_BANDWIDTH) {
+					u8 bw = iterator.this_arg[3] & 0x1F;
+					// NOTE: there are various L and U, but we just use straight 20/40/80
+					// since it's not clear how to set CHNL_OFFSET_LOWER/_UPPER with different
+					// sideband sizes/configurations.  TODO.
+					// Also, any 160 is treated as 80 due to lack of WIDTH_160.
+					if (bw == 0) 
+						pattrib->bwmode = CHANNEL_WIDTH_20;
+					else if (bw >=1 && bw <= 3)
+						pattrib->bwmode = CHANNEL_WIDTH_40; 
+					else if (bw >=4 && bw <= 10)
+						pattrib->bwmode = CHANNEL_WIDTH_80; 
+					else if (bw >= 11 && bw <= 25)
+						pattrib->bwmode = CHANNEL_WIDTH_80; // Supposed to be 160Mhz, we use 80Mhz
+				}
+
+				// User 0
+				nss = iterator.this_arg[4] & 0x0F; // Number of spatial streams
+				if (nss > 0) {
+					if (nss > 4) nss = 4;
+					mcs = (iterator.this_arg[4]>>4) & 0x0F; // MCS rate index
+					if (mcs > 8) mcs = 9;
+					pattrib->rate = MGN_VHT1SS_MCS0 + ((nss-1)*10 + mcs);
+
+					if (iterator.this_arg[8] & IEEE80211_RADIOTAP_CODING_LDPC_USER0)
+						pattrib->ldpc = _TRUE;
+				}
+
+			}
+			break;
+#endif
+
+			default:
+				break;
+		}
+	}
+
+	// All set
 	dump_mgntframe(padapter, pmgntframe);
+	pxmitpriv->tx_pkts++;
+	pxmitpriv->tx_bytes += skb->len;
 
 fail:
 	rtw_skb_free(skb);

@@ -14,17 +14,34 @@
  *****************************************************************************/
 #define _RTL8812A_PHYCFG_C_
 
-/* #include <drv_types.h> */
-
 #include <rtl8812a_hal.h>
 
-/*---------------------Define local function prototype-----------------------*/
+/* Manual Transmit Power Control 
+   The following options take values from 0 to 63, where:
+   0 - disable
+   1 - lowest transmit power the device can do
+   2 - highest transmit power the device can do
+   Note that these options may override your country's regulations about transmit power.
+   Setting the device to work at higher transmit powers most of the time may cause premature 
+   failure or damage by overheating. Make sure the device has enough airflow before you increase this.
+   It is currently unknown what these values translate to in dBm.
+*/
 
-/*----------------------------Function Body----------------------------------*/
+// Transmit Power Boost
+// This value is added to the device's calculation of transmit power index.
+// Useful if you want to keep power usage low while still boosting/decreasing transmit power.
+// Can take a negative value as well to reduce power.
+// Zero disables it. Default: 2, for a tiny boost.
+int transmit_power_boost = 2;
+// (ADVANCED) To know what transmit powers this device decides to use dynamically, see:
+// https://github.com/lwfinger/rtl8192ee/blob/42ad92dcc71cb15a62f8c39e50debe3a28566b5f/hal/phydm/rtl8192e/halhwimg8192e_rf.c#L1310
 
-/*
- * 1. BB register R/W API
- *   */
+// Transmit Power Override
+// This value completely overrides the driver's calculations and uses only one value for all transmissions.
+// Zero disables it. Default: 0
+int transmit_power_override = 0;
+
+/* Manual Transmit Power Control */
 
 u32
 PHY_QueryBBReg8812(
@@ -573,7 +590,12 @@ PHY_GetTxPowerIndex_8812A(
 	}
 
 	by_rate_diff = by_rate_diff > limit ? limit : by_rate_diff;
-	power_idx = base_idx + by_rate_diff + tpt_offset + extra_bias;
+	power_idx = base_idx + by_rate_diff + tpt_offset + extra_bias + transmit_power_boost;
+
+	if (transmit_power_override != 0)
+		power_idx = transmit_power_override;
+	if (power_idx < 1)
+		power_idx = 1;
 
 	if (power_idx < 0)
 		power_idx = 0;
@@ -1465,6 +1487,7 @@ phy_SwBand8812(
 	return ret_value;
 }
 
+#pragma clang optimize off
 u8
 phy_GetSecondaryChnl_8812(
 	IN	PADAPTER	Adapter
@@ -1506,6 +1529,7 @@ phy_GetSecondaryChnl_8812(
 	/*RTW_INFO("SCMapping: SC Value %x\n", ((SCSettingOf40 << 4) | SCSettingOf20));*/
 	return (SCSettingOf40 << 4) | SCSettingOf20;
 }
+#pragma clang optimize on
 
 VOID
 phy_SetRegBW_8812(
@@ -1774,9 +1798,11 @@ phy_SwChnl8812(
 	/* fc_area		 */
 	if (36 <= channelToSW && channelToSW <= 48)
 		phy_set_bb_reg(pAdapter, rFc_area_Jaguar, 0x1ffe0000, 0x494);
-	else if (50 <= channelToSW && channelToSW <= 64)
+	else if (15 <= channelToSW && channelToSW <= 35)
+		phy_set_bb_reg(pAdapter, rFc_area_Jaguar, 0x1ffe0000, 0x494);
+	else if (50 <= channelToSW && channelToSW <= 80)
 		phy_set_bb_reg(pAdapter, rFc_area_Jaguar, 0x1ffe0000, 0x453);
-	else if (100 <= channelToSW && channelToSW <= 116)
+	else if (82 <= channelToSW && channelToSW <= 116)
 		phy_set_bb_reg(pAdapter, rFc_area_Jaguar, 0x1ffe0000, 0x452);
 	else if (118 <= channelToSW)
 		phy_set_bb_reg(pAdapter, rFc_area_Jaguar, 0x1ffe0000, 0x412);
@@ -1785,9 +1811,11 @@ phy_SwChnl8812(
 
 	for (eRFPath = 0; eRFPath < pHalData->NumTotalRFPath; eRFPath++) {
 		/* RF_MOD_AG */
-		if (36 <= channelToSW && channelToSW <= 64)
+		if (36 <= channelToSW && channelToSW <= 80)
 			phy_set_rf_reg(pAdapter, eRFPath, RF_CHNLBW_Jaguar, BIT18 | BIT17 | BIT16 | BIT9 | BIT8, 0x101); /* 5'b00101); */
-		else if (100 <= channelToSW && channelToSW <= 140)
+		else if (15 <= channelToSW && channelToSW <= 35)
+                        phy_set_rf_reg(pAdapter, eRFPath, RF_CHNLBW_Jaguar, BIT18 | BIT17 | BIT16 | BIT9 | BIT8, 0x101); /* 5'b00101); */
+		else if (82 <= channelToSW && channelToSW <= 140)
 			phy_set_rf_reg(pAdapter, eRFPath, RF_CHNLBW_Jaguar, BIT18 | BIT17 | BIT16 | BIT9 | BIT8, 0x301); /* 5'b01101); */
 		else if (140 < channelToSW)
 			phy_set_rf_reg(pAdapter, eRFPath, RF_CHNLBW_Jaguar, BIT18 | BIT17 | BIT16 | BIT9 | BIT8, 0x501); /* 5'b10101); */
@@ -1802,25 +1830,25 @@ phy_SwChnl8812(
 		/* <20130104, Kordan> APK for MP chip is done on initialization from folder. */
 		if (IS_HARDWARE_TYPE_8821U(pAdapter) && (!IS_NORMAL_CHIP(pHalData->version_id)) && channelToSW > 14) {
 			/* <20121116, Kordan> For better result of APK. Asked by AlexWang. */
-			if (36 <= channelToSW && channelToSW <= 64)
+			if (15 <= channelToSW && channelToSW <= 80)
 				phy_set_rf_reg(pAdapter, eRFPath, RF_APK_Jaguar, bRFRegOffsetMask, 0x710E7);
-			else if (100 <= channelToSW && channelToSW <= 140)
+			else if (82 <= channelToSW && channelToSW <= 140)
 				phy_set_rf_reg(pAdapter, eRFPath, RF_APK_Jaguar, bRFRegOffsetMask, 0x716E9);
 			else
 				phy_set_rf_reg(pAdapter, eRFPath, RF_APK_Jaguar, bRFRegOffsetMask, 0x714E9);
 		} else if (IS_HARDWARE_TYPE_8821S(pAdapter) && channelToSW > 14) {
 			/* <20130111, Kordan> For better result of APK. Asked by Willson. */
-			if (36 <= channelToSW && channelToSW <= 64)
+			if (15 <= channelToSW && channelToSW <= 80)
 				phy_set_rf_reg(pAdapter, eRFPath, RF_APK_Jaguar, bRFRegOffsetMask, 0x714E9);
-			else if (100 <= channelToSW && channelToSW <= 140)
+			else if (82 <= channelToSW && channelToSW <= 140)
 				phy_set_rf_reg(pAdapter, eRFPath, RF_APK_Jaguar, bRFRegOffsetMask, 0x110E9);
 			else
 				phy_set_rf_reg(pAdapter, eRFPath, RF_APK_Jaguar, bRFRegOffsetMask, 0x714E9);
 		} else if (IS_HARDWARE_TYPE_8821E(pAdapter) && channelToSW > 14) {
 			/* <20130613, Kordan> For better result of APK. Asked by Willson. */
-			if (36 <= channelToSW && channelToSW <= 64)
+			if (15 <= channelToSW && channelToSW <= 80)
 				phy_set_rf_reg(pAdapter, eRFPath, RF_APK_Jaguar, bRFRegOffsetMask, 0x114E9);
-			else if (100 <= channelToSW && channelToSW <= 140)
+			else if (82 <= channelToSW && channelToSW <= 140)
 				phy_set_rf_reg(pAdapter, eRFPath, RF_APK_Jaguar, bRFRegOffsetMask, 0x110E9);
 			else
 				phy_set_rf_reg(pAdapter, eRFPath, RF_APK_Jaguar, bRFRegOffsetMask, 0x110E9);
