@@ -1,3 +1,18 @@
+realtek-rtl88xxau-dkms (5.6.4.2~git20250330.c3fb89a-0parrot1) echo; urgency=medium
+
+  * Import new upstream version
+  * Sync with kali packaging.
+
+ -- Lorenzo "Palinuro" Faletra <palinuro@parrotsec.org>  Thu, 08 Jan 2026 20:39:15 +0100
+
+realtek-rtl88xxau-dkms (5.6.4.2~git20250330.c3fb89a-0kali1) kali-dev; urgency=medium
+
+  * Update my email
+  * New upstream version 5.6.4.2~git20250330.c3fb89a
+  * Do not build for kernel > 6.15
+
+ -- Sophie Brun <sophie@kali.org>  Tue, 30 Sep 2025 12:28:15 +0200
+
 realtek-rtl88xxau-dkms (5.6.4.2~git20231117.a3e0c0b-0parrot1) lory-updates; urgency=medium
 
   * Import new upstream version 5.6.4.2~git20231117.a3e0c0b for kernel 6.6.*.

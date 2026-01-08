@@ -1,6 +1,12 @@
 ## RTL8812AU/21AU and RTL8814AU Wireless drivers
 Only for use with Linux & Android
 
+
+# THESE DRIVERS IS DEPRECATED.
+# Use the mac80211 drivers over at [https://github.com/lwfinger/rtw88](https://github.com/lwfinger/rtw88)
+
+
+
 [![Monitor mode](https://img.shields.io/badge/monitor%20mode-working-brightgreen.svg)](#)
 [![Frame Injection](https://img.shields.io/badge/frame%20injection-working-brightgreen.svg)](#)
 [![GitHub version](https://raster.shields.io/badge/version-v5.6.4.2-lightgrey.svg)](#)
@@ -24,6 +30,7 @@ Only for use with Linux & Android
 * Use "ip" and "iw" instead of "ifconfig" and "iwconfig"
      It's described further down, READ THE README!
 ```
+Note: There is a regression with the TP-Link AC600 and potenically other devices. Currently the work around is to pull from a previous commit. Please see [this comment](https://github.com/aircrack-ng/rtl8812au/issues/1159#issuecomment-2169928358)
 
 ### IPERF3 benchmark
 
@@ -97,6 +104,12 @@ Package / Build dependencies (Kali)
 ```
 $ sudo apt-get update
 $ sudo apt-get install bc mokutil build-essential libelf-dev linux-headers-`uname -r`
+```
+#### For Proxmox Virtual Environment (PVE)
+Package / Build dependencies
+```
+$ sudo apt-get update
+$ sudo apt-get install bc mokutil build-essential libelf-dev pve-headers-`uname -r`
 ```
 #### For Raspberry (RPI)
 

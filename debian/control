@@ -1,8 +1,8 @@
 Source: realtek-rtl88xxau-dkms
 Section: contrib/kernel
 Priority: optional
-Maintainer: Lorenzo "Palinuro" Faletra <palinuro@parrotsec.org>
-Uploaders: Lorenzo "Palinuro" Faletra <palinuro@parrotsec.org>
+Maintainer: Parrot Dev Team <team@parrotsec.org>
+Uploaders: Sophie Brun <sophie@kali.org>
 Build-Depends: debhelper-compat (= 13), dh-sequence-dkms
 Standards-Version: 4.6.2
 Homepage: https://github.com/aircrack-ng/rtl8812au
